@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
 
@@ -24,7 +25,7 @@ import ru.kpfu.itis.Kolodeznikova.util.Logs;
 public class MainServlet extends HttpServlet {
 
     private static final int PAGE_SIZE = 10;
-    private Gson gson = new Gson();
+    private final Gson gson = new Gson();
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -139,7 +140,7 @@ public class MainServlet extends HttpServlet {
         conn.setDoOutput(true);
 
         try (OutputStream os = conn.getOutputStream()) {
-            byte[] input = json.getBytes("utf-8");
+            byte[] input = json.getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
         }
 
@@ -156,7 +157,7 @@ public class MainServlet extends HttpServlet {
         conn.setDoOutput(true);
 
         try (OutputStream os = conn.getOutputStream()) {
-            byte[] input = json.getBytes("utf-8");
+            byte[] input = json.getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
         }
 
