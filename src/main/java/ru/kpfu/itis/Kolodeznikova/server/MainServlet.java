@@ -6,10 +6,7 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
@@ -36,14 +33,16 @@ public class MainServlet extends HttpServlet {
     }
 
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String pathInfo = req.getPathInfo();
+        String uri = req.getRequestURI();
 
-        if (pathInfo != null && pathInfo.startsWith("/api")) {
+        if (uri.startsWith(req.getContextPath() + "/api/posts")) {
             resp.setContentType("application/json");
             resp.setCharacterEncoding("UTF-8");
 
-            if (pathInfo.matches("/api/posts/\\d+")) {
-                String id = pathInfo.substring(10);
+            String pathInfo = req.getPathInfo();
+
+            if (pathInfo != null && pathInfo.matches("/\\d+")) {
+                String id = pathInfo.substring(1);
                 List<Post> allPosts = getAllPosts("ASC");
                 Post post = allPosts.stream()
                         .filter(p -> p.getId().equals(Long.parseLong(id)))
@@ -77,6 +76,7 @@ public class MainServlet extends HttpServlet {
 
             resp.getWriter().write(gson.toJson(response));
             Logs.logSuccess("READ", null);
+            return;
         }
 
         String order = req.getParameter("order");
@@ -180,8 +180,8 @@ public class MainServlet extends HttpServlet {
         URL url = new URL("https://jsonplaceholder.typicode.com/posts");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
-        conn.setConnectTimeout(5000);
-        conn.setReadTimeout(10000);
+        conn.setConnectTimeout(20000);
+        conn.setReadTimeout(20000);
 
         try {
             String response = readResponse(conn);
@@ -273,7 +273,11 @@ public class MainServlet extends HttpServlet {
 
     private String readResponse(HttpURLConnection conn) throws IOException {
         conn.connect();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+        int status = conn.getResponseCode();
+
+        InputStream is = (status >= 400) ? conn.getErrorStream() : conn.getInputStream();
+
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
             String line;
             while ((line = br.readLine()) != null) {
