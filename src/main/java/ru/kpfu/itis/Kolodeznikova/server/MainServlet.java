@@ -14,14 +14,16 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import ru.kpfu.itis.Kolodeznikova.entity.Post;
 import ru.kpfu.itis.Kolodeznikova.util.Logs;
 
-@WebServlet(name="Posts Page", urlPatterns = "/posts")
+@WebServlet(name="Posts Page", urlPatterns = {"/posts", "/api/posts/*"})
 public class MainServlet extends HttpServlet {
 
     private static final int PAGE_SIZE = 10;
@@ -33,6 +35,49 @@ public class MainServlet extends HttpServlet {
     }
 
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        String pathInfo = req.getPathInfo();
+
+        if (pathInfo != null && pathInfo.startsWith("/api")) {
+            resp.setContentType("application/json");
+            resp.setCharacterEncoding("UTF-8");
+
+            if (pathInfo.matches("/api/posts/\\d+")) {
+                String id = pathInfo.substring(10);
+                List<Post> allPosts = getAllPosts("ASC");
+                Post post = allPosts.stream()
+                        .filter(p -> p.getId().equals(Long.parseLong(id)))
+                        .findFirst().orElse(null);
+
+                if (post != null) {
+                    resp.getWriter().write(gson.toJson(post));
+                } else {
+                    resp.setStatus(404);
+                }
+                return;
+            }
+
+            String order = req.getParameter("order");
+            if (!"ASC".equalsIgnoreCase(order) && !"DESC".equalsIgnoreCase(order)) {
+                order = "ASC";
+            }
+            String pageStr = req.getParameter("page");
+            int page = Integer.parseInt(pageStr != null ? pageStr : "1");
+            int index = (page - 1) * PAGE_SIZE;
+
+            List<Post> allPosts = getAllPosts(order);
+            List<Post> pagePosts = getPostsForPage(allPosts, index);
+            int totalPages = (int) Math.ceil((double) allPosts.size() / PAGE_SIZE);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("posts", pagePosts);
+            response.put("currentPage", page);
+            response.put("totalPages", totalPages);
+            response.put("order", order);
+
+            resp.getWriter().write(gson.toJson(response));
+            Logs.logOperation("READ", null);
+        }
+
         String order = req.getParameter("order");
         if (!"ASC".equalsIgnoreCase(order) && !"DESC".equalsIgnoreCase(order)) {
             order = "ASC";
@@ -57,7 +102,7 @@ public class MainServlet extends HttpServlet {
         req.setAttribute("posts", pagePosts);
         req.setAttribute("currentPage", page);
         req.setAttribute("totalPages", totalPages);
-        req.getRequestDispatcher("/WEB-INF/views/posts.jsp").forward(req, resp);
+        req.getRequestDispatcher("/WEB-INF/templates/posts/posts.ftl").forward(req, resp);
     }
 
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
