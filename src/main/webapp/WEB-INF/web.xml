@@ -6,7 +6,7 @@
          version="4.0">
 
     <welcome-file-list>
-        <welcome-file>posts</welcome-file>
+        <welcome-file></welcome-file>
     </welcome-file-list>
 
     <servlet>
@@ -27,16 +27,6 @@
     <servlet-mapping>
         <servlet-name>freemarker</servlet-name>
         <url-pattern>*.ftl</url-pattern>
-    </servlet-mapping>
-
-    <servlet>
-        <servlet-name>MainServlet</servlet-name>
-        <servlet-class>ru.kpfu.itis.Kolodeznikova.server.MainServlet</servlet-class>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>MainServlet</servlet-name>
-        <url-pattern>/posts</url-pattern>
-        <url-pattern>/api/posts/*</url-pattern>
     </servlet-mapping>
 
 </web-app>

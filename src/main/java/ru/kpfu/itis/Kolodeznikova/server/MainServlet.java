@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
@@ -75,7 +76,7 @@ public class MainServlet extends HttpServlet {
             response.put("order", order);
 
             resp.getWriter().write(gson.toJson(response));
-            Logs.logOperation("READ", null);
+            Logs.logSuccess("READ", null);
         }
 
         String order = req.getParameter("order");
@@ -96,7 +97,7 @@ public class MainServlet extends HttpServlet {
 
         int totalPages = (int) Math.ceil((double) allPosts.size() / pageSize);
 
-        Logs.logOperation("READ", null);
+        Logs.logSuccess("READ", null);
 
         req.setAttribute("order", order);
         req.setAttribute("posts", pagePosts);
@@ -108,15 +109,23 @@ public class MainServlet extends HttpServlet {
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         String action = req.getParameter("action");
         if ("create".equals(action)) {
-            String title = req.getParameter("title");
-            String body = req.getParameter("body");
-            String userId = req.getParameter("userId");
+            try {
+                String title = req.getParameter("title");
+                String body = req.getParameter("body");
+                String userId = req.getParameter("userId");
 
-            Post newPost = createPost(title, body, Long.parseLong(userId));
-            Logs.logOperation("CREATE", newPost.getId());
+                Post newPost = createPost(title, body, Long.parseLong(userId));
+                Logs.logSuccess("CREATE", newPost.getId());
 
-            resp.setContentType("application/json");
-            resp.getWriter().write(gson.toJson(newPost));
+                resp.setContentType("application/json");
+                resp.getWriter().write(gson.toJson(newPost));
+            } catch (SocketTimeoutException e) {
+                Logs.logTimeout("CREATE", null, e.getMessage());
+                resp.setStatus(HttpServletResponse.SC_GATEWAY_TIMEOUT);
+            } catch (Exception e) {
+                Logs.logFailure("CREATE", null, e.getMessage());
+                resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
             return;
         }
         resp.sendRedirect(req.getRequestURI() + "?page=1&order=ASC");
@@ -124,46 +133,76 @@ public class MainServlet extends HttpServlet {
 
     @Override
     protected void doPut(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        BufferedReader reader = req.getReader();
-        StringBuilder json = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            json.append(line);
+        try {
+            BufferedReader reader = req.getReader();
+            StringBuilder json = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                json.append(line);
+            }
+
+            Post updatedPost = gson.fromJson(json.toString(), Post.class);
+            updatePost(updatedPost);
+            Logs.logSuccess("UPDATE", updatedPost.getId());
+
+            resp.setContentType("application/json");
+            resp.setStatus(HttpServletResponse.SC_OK);
+            resp.getWriter().write(gson.toJson(updatedPost));
+        } catch (SocketTimeoutException e) {
+            Logs.logTimeout("UPDATE", null, e.getMessage());
+            resp.setStatus(HttpServletResponse.SC_GATEWAY_TIMEOUT);
+        } catch (Exception e) {
+            Logs.logFailure("UPDATE", null, e.getMessage());
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
-
-        Post updatedPost = gson.fromJson(json.toString(), Post.class);
-        updatePost(updatedPost);
-        Logs.logOperation("UPDATE", updatedPost.getId());
-
-        resp.setContentType("application/json");
-        resp.setStatus(HttpServletResponse.SC_OK);
-        resp.getWriter().write(gson.toJson(updatedPost));
     }
 
     @Override
     protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         String postIdStr = req.getParameter("id");
         Long postId = Long.parseLong(postIdStr);
-        deletePost(postId);
-        Logs.logOperation("DELETE", postId);
-        resp.setContentType("application/json");
-        resp.setStatus(HttpServletResponse.SC_OK);
-        resp.getWriter().write("{\"status\":\"deleted\"}");
+        try {
+            deletePost(postId);
+            Logs.logSuccess("DELETE", postId);
+            resp.setContentType("application/json");
+            resp.setStatus(HttpServletResponse.SC_OK);
+            resp.getWriter().write("{\"status\":\"deleted\"}");
+        } catch (SocketTimeoutException e) {
+            Logs.logTimeout("DELETE", postId, e.getMessage());
+            resp.setStatus(HttpServletResponse.SC_GATEWAY_TIMEOUT);
+        } catch (Exception e) {
+            Logs.logFailure("DELETE", postId, e.getMessage());
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
     }
 
     private List<Post> getAllPosts(String order) throws IOException {
         URL url = new URL("https://jsonplaceholder.typicode.com/posts");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
-        String response = readResponse(conn);
-        List<Post> posts = gson.fromJson(response, new TypeToken<List<Post>>(){}.getType());
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
 
-        if ("DESC".equalsIgnoreCase(order)) {
-            posts.sort((p1, p2) -> p2.getId().compareTo(p1.getId()));
-        } else {
-            posts.sort(Comparator.comparing(Post::getId));
+        try {
+            String response = readResponse(conn);
+            List<Post> posts = gson.fromJson(response, new TypeToken<List<Post>>(){}.getType());
+
+            if ("DESC".equalsIgnoreCase(order)) {
+                posts.sort((p1, p2) -> p2.getId().compareTo(p1.getId()));
+            } else {
+                posts.sort(Comparator.comparing(Post::getId));
+            }
+            Logs.logSuccess("READ", null);
+            return posts;
+        } catch (SocketTimeoutException e) {
+            Logs.logTimeout("READ", null, e.getMessage());
+            throw e;
+        } catch (IOException e) {
+            Logs.logFailure("READ", null, e.getMessage());
+            throw e;
+        } finally {
+            conn.disconnect();
         }
-        return posts;
     }
 
     private List<Post> getPostsForPage(List<Post> allPosts, int index) {
@@ -183,14 +222,20 @@ public class MainServlet extends HttpServlet {
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setDoOutput(true);
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
 
         try (OutputStream os = conn.getOutputStream()) {
             byte[] input = json.getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
         }
 
-        String response = readResponse(conn);
-        return gson.fromJson(response, Post.class);
+        try {
+            String response = readResponse(conn);
+            return gson.fromJson(response, Post.class);
+        } finally {
+            conn.disconnect();
+        }
     }
 
     private void updatePost(Post post) throws IOException {
@@ -200,20 +245,30 @@ public class MainServlet extends HttpServlet {
         conn.setRequestMethod("PUT");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setDoOutput(true);
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
 
         try (OutputStream os = conn.getOutputStream()) {
             byte[] input = json.getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
         }
 
-        String response = readResponse(conn);
+        try {
+            readResponse(conn);
+        } finally {
+            conn.disconnect();
+        }
     }
 
     private void deletePost(Long id) throws IOException {
         URL url = new URL("https://jsonplaceholder.typicode.com/posts/" + id);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("DELETE");
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
+
         conn.connect();
+        conn.disconnect();
     }
 
     private String readResponse(HttpURLConnection conn) throws IOException {

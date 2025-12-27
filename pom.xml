@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>ru.kpfu.itis.Kolodeznikova</groupId>
-    <artifactId>SportBuddy</artifactId>
+    <artifactId>ExtraTask</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>war</packaging>
 
